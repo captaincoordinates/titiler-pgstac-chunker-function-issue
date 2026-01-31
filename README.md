@@ -1,3 +1,37 @@
+# PostgreSQL 17 Chunker Function Issue in Tests
+
+This fork demonstrates an issue with titiler-pgstac tests on Postgres 17. It appears that the issue only affects tests and not regular titiler-pgstac use.
+
+## Chunker Function Issue
+
+### Reproduce
+
+To reproduce this issue:
+
+```sh
+scripts/setup.sh    # configure pgstac submodule prior to test
+scripts/test.sh
+```
+
+This script builds two versions of pgstac: one with Postgres 16 and one with Postgres 17. It builds a tester container image on top of each pgstac version and executes this project's automated tests. Tests pass on Postgres 16 but fail on Postgres 17.
+
+This project's CI currently [uses](https://github.com/stac-utils/titiler-pgstac/blob/1d6ef40698f86e4a12b071fd5629b7494abe837d/.github/workflows/ci.yml#L38) Postgres 16, which explains why this issue has not previously been apparent.
+
+### Scope
+
+I was unable to replicate the issue in normal titiler-pgstac use or [this](https://github.com/captaincoordinates/pgstac-chunker-function-issue) pgstac-only repo. I suspect this _could_ indicate an issue with the [pytest-postgresql](https://pypi.org/project/pytest-postgresql/) package used to support automated tests.
+
+### Impact
+
+As this issue does not appear to directly affect titiler-pgstac use its impact is likely low, however by generating false negatives in testing it can negatively impact development efforts that extend titiler-pgstac.
+
+### Investigation
+
+The cause appears to be within the [`pgstac.chunker`](https://github.com/stac-utils/pgstac/blob/497625a1ec77a197f6f2ff3e1dd7b9456bb1b3a1/src/pgstac/sql/004_search.sql#L2) function. This function joins to the `pgstac.partition_steps` materialized view using the `EXPLAIN` JSON's `Relation Name` field. `pgstac.partition_steps` has schema-prefixed table names and while Postgres 16's `Relation Name` field also has schema-prefixed table names, Postgres 17's does not. In Postgres 17 this creates a 0-row join product, which means calls to `pgstac.partition_queries` that include a `datetime` ORDER BY clause return 0 SQL statements, which means functions like `pgstac.geojsonsearch` erroneously return 0 features when they should return >0 features.
+
+---
+
+
 <p align="center">
   <img width="500" src="https://github.com/stac-utils/titiler-pgstac/assets/10407788/24a64ea9-fede-4ee8-ab8d-625c9e94db44"/>
   <p align="center">Connect PgSTAC and TiTiler.</p>

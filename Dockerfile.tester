@@ -1,0 +1,48 @@
+ARG PGSTAC_IMAGE=ghcr.io/stac-utils/pgstac:v${PGSTAC_VERSION-0.9.8}
+FROM ${PGSTAC_IMAGE}
+
+RUN  apt-get update --fix-missing \
+  && apt-get install -y --no-install-recommends \
+  build-essential \
+  ca-certificates \
+  curl \
+  libbz2-dev \
+  libc6-dev \
+  libffi-dev \
+  libgdbm-dev \
+  libncursesw5-dev \
+  libreadline-dev \
+  libsqlite3-dev \
+  libssl-dev \
+  pkg-config \
+  tk-dev \
+  zlib1g-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /python
+RUN  curl -o python.tgz https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tar.xz \
+  && tar -xvf python.tgz
+WORKDIR /python/Python-3.11.9
+RUN  ./configure --enable-optimizations \
+  && make -j$(nproc) \
+  && make install \
+  && ln -s $(which python3.11) /usr/local/bin/python
+
+USER postgres
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=true \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON=python3.11
+
+WORKDIR /app
+COPY --chown=postgres: pyproject.toml uv.lock ./
+RUN uv sync --dev --extra psycopg --no-install-workspace --frozen
+
+COPY --chown=postgres: LICENSE ./
+COPY --chown=postgres: README.md ./
+COPY --chown=postgres: benchmark ./benchmark
+COPY --chown=postgres: tests ./tests
+COPY --chown=postgres: titiler ./titiler
+RUN uv sync --dev --extra psycopg --frozen
